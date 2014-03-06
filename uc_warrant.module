@@ -1,0 +1,184 @@
+<?
+
+function uc_warrant_menu() {
+	$items['warrant'] = array(
+		'title' => t('Product agreement'),
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('uc_warrant_warrant_form'),
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+
+	$items['admin/config/cua/uc_warrant'] = array(
+		'title' => t('Warrant config'),
+		'page callback' => 'uc_warrant_config',
+		'access arguments' => array('administer site configuration'),
+		'type' => MENU_NORMAL_ITEM,
+	);
+
+	$items['admin/config/uc_warrant/edit/%'] = array(
+		'title' => t('Warrant edit'),
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('uc_warrant_config_edit_form', 4),
+		'access arguments' => array('administer site configuration'),
+		'type' => MENU_CALLBACK,
+	);
+
+	$items['admin/config/uc_warrant/new'] = array(
+		'title' => t('Warrant edit'),
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('uc_warrant_config_new_form'),
+		'access arguments' => array('administer site configuration'),
+		'type' => MENU_CALLBACK,
+	);
+
+	return $items;
+}
+
+// ADMIN code
+function uc_warrant_config() {
+	$query = db_query("select * from uc_warrant_warrants");
+	
+	$out = "<div>";
+	$out .= "<a href=\"/admin/config/uc_warrant/new/\"> New warrant </a>";
+	$out .= "</div>";
+
+	foreach($query as $w) {
+		$node = node_load($w->pid);
+		$out .= "<div>";
+		$out .= "<a href=\"/admin/config/uc_warrant/edit/$w->pid\">Edit warrant for $node->title</a>";
+		$out .= "</div>";
+	}
+
+	return $out;
+}
+
+function uc_warrant_config_edit_form($form, &$form_state, $pid) {
+	$query = db_query('select * from uc_warrant_warrants where pid = :pid', array(':pid' => $pid))->fetchObject();
+	$node = node_load($pid);
+	$form = array();
+
+	$form['pid'] = array(
+		'#type' => 'textfield',
+		'#title' => 'pid',
+		'#default_value' => $query->pid,
+	);
+	$form['product_title'] = array(
+		'#markup' => "<div> $node->title </div>",
+	);
+
+	$form['data'] = array(
+		'#type' => 'textarea',
+		'#default_value' => $query->data,
+	);
+
+	$form['enabled'] = array(
+		'#type' => 'checkbox',
+		'#title' => "Enabled",
+		'#default_value' => $query->enabled,
+	);
+
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => 'Submit',
+	);
+
+	return $form;
+}
+
+function uc_warrant_config_edit_form_submit($form, &$form_state) {
+	db_query('update uc_warrant_warrants set pid = :pid, data = :data, enabled = :enabled where pid = :pid_old',
+		array(':pid' => $form['pid']['#value'], 
+			  ':data' => $form['data']['#value'], 
+			  ':enabled' => $form['enabled']['#value'],
+			  ':pid_old' => $form['pid']['#default_value']
+		  ));
+	drupal_set_message('value updated');
+}
+
+function uc_warrant_config_new_form($form, &$form_state) {
+	$form['pid'] = array(
+		'#type' => 'textfield',
+		'#title' => 'pid',
+		'#default_value' => $query->pid,
+	);
+
+	$form['data'] = array(
+		'#type' => 'textarea',
+		'#default_value' => $query->data,
+	);
+
+	$form['enabled'] = array(
+		'#type' => 'checkbox',
+		'#title' => "Enabled",
+		'#default_value' => $query->enabled,
+	);
+
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => 'Submit',
+	);
+
+	return $form;
+}
+
+function uc_warrant_config_new_form_submit($form, &$form_state) {
+	db_query('insert into uc_warrant_warrants values(:pid, :data, :enabled)',
+		array(':pid' => $form['pid']['#value'], 
+			  ':data' => $form['data']['#value'], 
+			  ':enabled' => $form['enabled']['#value']
+		  ));
+	drupal_set_message('new warrant created');	
+}
+
+// User code
+function uc_warrant_form_alter(&$form, &$form_state, &$form_id) {
+	if(strpos($form_id, 'uc_product_add_to_cart_form_') === 0) {
+		$query = db_query('select * from uc_warrant_warrants where pid = :pid', array(':pid' => $form['nid']['#value']));
+		$query = $query->fetchObject();
+
+		if(!empty($query) && $query->enabled == true) {
+			$form['actions']['submit']['#submit'][] = 'uc_warrant_submit_handler';
+		}
+	}
+}
+
+function uc_warrant_submit_handler($form, &$form_state) {
+	$_SESSION['uc_warrant_form_values'] = $form_state['values'];
+	$form_state['redirect'] = array("warrant");
+}
+
+function uc_warrant_warrant_form($form, &$form_state) {
+	$fvl = array_merge(array(), $_SESSION['uc_warrant_form_values']);
+	$form_state['storage']['values'] = $fvl;
+
+	$query = db_query('select * from uc_warrant_warrants where pid = :pid', array(':pid' => $fvl['nid']))->fetchObject();
+
+	$form = array();
+
+	$form['text'] = array(
+		'#markup' => '<div>' . $query->data . '</div>',
+	);
+
+	$form['check'] = array(
+		'#type' => 'checkbox',
+		'#title' => 'I agree',
+		'#required' => true,
+	);
+
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => 'Submit',
+	);
+	return $form;
+}
+
+function uc_warrant_warrant_form_submit($form, &$form_state) {
+	uc_cart_add_item($form_state['storage']['values']['nid'], $form_state['storage']['values']['qty'], 
+		module_invoke_all('uc_add_to_cart_data', $form_state['storage']['values']), 
+		NULL, variable_get('uc_cart_add_item_msg', TRUE));
+	$form_state['redirect'] = array("cart");
+	unset($_SESSION['uc_warrant_form_values']);
+}
+
+?>
